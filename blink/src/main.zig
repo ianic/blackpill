@@ -1,6 +1,24 @@
 const micro = @import("microzig");
+const std = @import("std");
 
 pub fn main() void {
+    //proba();
+    //dummy();
+
+    const led_pin = micro.Pin("PC13");
+    const led = micro.Gpio(led_pin, .{
+        .mode = .output,
+        .initial_state = .high,
+    });
+    led.init();
+
+    while (true) {
+        blink_morse(led, "iso medo u ducan nije reko dobar dan ");
+        //blink_morse(led, "sos ");
+    }
+}
+
+pub fn dummy() void {
     const led_pin = micro.Pin("PC13");
     const led = micro.Gpio(led_pin, .{
         .mode = .output,
@@ -14,40 +32,99 @@ pub fn main() void {
     }
 }
 
-// const micro = @import("microzig");
-// const regs = micro.chip.registers; // `microzig.chip.registers`: access to register definitions
+// blinking led in regular interval
+pub fn proba() void {
+    const led_pin = micro.Pin("PC13");
+    const led = micro.Gpio(led_pin, .{
+        .mode = .output,
+        .initial_state = .high,
+    });
+    led.init();
 
-// pub fn main() !void {
-//     // Enable GPIOD port
-//     regs.RCC.AHB1ENR.modify(.{ .GPIODEN = 1 });
+    while (true) {
+        //led.setToLow();
+        micro.debug.busySleep(500_000);
+        //led.setToHigh();
+        micro.debug.busySleep(1_500_000);
+    }
+}
 
-//     // Set pin 12/13/14/15 mode to general purpose output
-//     regs.GPIOD.MODER.modify(.{ .MODER13 = 0b01 });
+fn blink_morse(comptime led: type, word: []const u8) void {
+    const interval = 100_000;
 
-//     // Set pin 12 and 14
-//     regs.GPIOD.BSRR.modify(.{ .BS13 = 1 });
+    for (word) |chr| {
+        if (chr == ' ') {
+            led.setToHigh();
+            micro.debug.busySleep(4 * interval);
+            continue;
+        }
 
-//     // const led = micro.Gpio(u32, .{
-//     //     .mode = .output,
-//     //     .initial_state = .low,
-//     // });
-//     // led.init();
+        var codes = morse(chr);
+        for (codes) |code| {
+            switch (code) {
+                Code.dit => {
+                    led.setToLow();
+                    micro.debug.busySleep(1 * interval);
+                    led.setToHigh();
+                    micro.debug.busySleep(1 * interval);
+                },
+                Code.dash => {
+                    led.setToLow();
+                    micro.debug.busySleep(3 * interval);
+                    led.setToHigh();
+                    micro.debug.busySleep(1 * interval);
+                },
+                Code.end => {
+                    led.setToHigh();
+                    micro.debug.busySleep(3 * interval);
+                },
+            }
+            if (code == Code.end) {
+                break;
+            }
+        }
+    }
+}
 
-//     while (true) {
-//         // Read the LED state
-//         var leds_state = regs.GPIOD.ODR.read();
-//         // Set the LED output to the negation of the currrent output
-//         regs.GPIOD.ODR.modify(.{
-//             .ODR13 = ~leds_state.ODR13,
-//         });
+//ref: https://stackoverflow.com/questions/28045172/morse-code-converter-in-c
+const letters = "**etianmsurwdkgohvf?l?pjbxcyzq??";
 
-//         micro.debug.busySleep(100_000);
+const Code = enum {
+    dit,
+    dash,
+    end,
+};
 
-//         // // Sleep for some time
-//         // var i: u32 = 0;
-//         // while (i < 100000) {
-//         //     asm volatile ("nop");
-//         //     i += 1;
-//         // }
-//     }
-// }
+fn morse(chr: u8) [4]Code {
+    var ret: [4]Code = .{Code.end} ** 4;
+    var idx: u8 = 0;
+    while (letters[idx] != chr) : (idx += 1) {}
+
+    var i: u8 = 3;
+    if (idx < 16) {
+        i = 2;
+        if (idx < 8) {
+            i = 1;
+            if (idx < 4) {
+                i = 0;
+            }
+        }
+    }
+    while (i >= 0) : (i -= 1) {
+        ret[i] = if (idx % 2 == 0) Code.dit else Code.dash;
+        idx = idx / 2;
+        if (idx <= 1) {
+            break;
+        }
+    }
+    return ret;
+}
+
+test "access morse field" {
+    //std.debug.print("a: {s}\n", .{morse('a')});
+
+    try std.testing.expectEqual(morse('a'), [_]Code{ Code.dit, Code.dash, Code.end, Code.end });
+    try std.testing.expectEqual(morse('b'), [_]Code{ Code.dash, Code.dit, Code.dit, Code.dit });
+    try std.testing.expectEqual(morse('y'), [_]Code{ Code.dash, Code.dit, Code.dash, Code.dash });
+    try std.testing.expectEqual(morse('d'), [_]Code{ Code.dash, Code.dit, Code.dit, Code.end });
+}

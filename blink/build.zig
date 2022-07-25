@@ -3,24 +3,9 @@ const micro = @import("lib/microzig/src/main.zig");
 
 pub fn build(b: *std.build.Builder) !void {
     const backing = .{
-        .chip = micro.chips.stm32f407vg, // ovaj hoce
-        //.chip = micro.chips.nrf52832, // ovaj ni nema parse pin
-        //.chip = micro.chips.stm32f429zit6u,  // ovaj isto nece
-        //.chip = micro.chips.stm32f303vc,  // ovaj nece
+        .chip = micro.chips.stm32f411ce, // ovaj hoce
+        //.chip = micro.chips.stm32f407vg, // ovaj hoce
     };
-
-    // const stm32411 = micro.Chip{
-    //     .name = "stm32411",
-    //     .path = "lib/stm32411.zig",
-    //     .cpu = micro.cpus.cortex_m4,
-    //     .memory_regions = &.{
-    //         .{ .offset = 0x08000000, .length = 512 * 1024, .kind = .flash }, // 512 Kbytes (st32f411cE)
-    //         .{ .offset = 0x20000000, .length = 128 * 1024, .kind = .ram }, // 128 Kbytes
-    //     },
-    // };
-    // const backing = .{
-    //     .chip = stm32411,
-    // };
 
     const bin = try micro.addEmbeddedExecutable(
         b,
