@@ -2,23 +2,6 @@ const micro = @import("microzig");
 const std = @import("std");
 
 pub fn main() void {
-    //proba();
-    //dummy();
-
-    const led_pin = micro.Pin("PC13");
-    const led = micro.Gpio(led_pin, .{
-        .mode = .output,
-        .initial_state = .high,
-    });
-    led.init();
-
-    while (true) {
-        blink_morse(led, "iso medo u ducan nije reko dobar dan ");
-        //blink_morse(led, "sos ");
-    }
-}
-
-pub fn dummy() void {
     const led_pin = micro.Pin("PC13");
     const led = micro.Gpio(led_pin, .{
         .mode = .output,
@@ -27,26 +10,26 @@ pub fn dummy() void {
     led.init();
 
     while (true) {
-        micro.debug.busySleep(500_000);
-        led.toggle();
+        //dummy(led);
+        //irregular(led);
+
+        //blink_morse(led, "iso medo u ducan nije reko dobar dan ");
+        blink_morse(led, "sos ");
     }
 }
 
 // blinking led in regular interval
-pub fn proba() void {
-    const led_pin = micro.Pin("PC13");
-    const led = micro.Gpio(led_pin, .{
-        .mode = .output,
-        .initial_state = .high,
-    });
-    led.init();
+pub fn dummy(comptime led: type) void {
+    micro.debug.busySleep(500_000);
+    led.toggle();
+}
 
-    while (true) {
-        //led.setToLow();
-        micro.debug.busySleep(500_000);
-        //led.setToHigh();
-        micro.debug.busySleep(1_500_000);
-    }
+// low is led on, high is off !!!
+pub fn irregular(comptime led: type) void {
+    led.setToLow();
+    micro.debug.busySleep(500_000);
+    led.setToHigh();
+    micro.debug.busySleep(500_000 * 3);
 }
 
 fn blink_morse(comptime led: type, word: []const u8) void {
