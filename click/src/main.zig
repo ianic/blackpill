@@ -2,31 +2,15 @@ const micro = @import("microzig");
 const regs = micro.chip.registers;
 
 pub const interrupts = struct {
-    // pub fn Reset() void {
-    //     blink(3);
-    // }
-
-    pub fn SysTick() void {
-        //led.toggle();
-        //@panic("hit systick!");
-        //clicked += 1;
-    }
-
     pub fn EXTI0() void {
-        //if (regs.EXTI.PR.read().PR0 == 0) {
-        //if (key.read() == .high) {
         key_pressed = true;
         regs.EXTI.PR.modify(.{ .PR0 = 1 });
-        //}
-        //}
     }
 };
 
-const short = 1_000_000;
-const long = 10_000_000;
-var clicked: u32 = 1;
-var delay: u32 = 200_000;
-var counter: u32 = 1;
+const short = 100;
+const long = 1000;
+
 var key_pressed = false;
 
 const led_pin = micro.Pin("PC13");
@@ -54,12 +38,8 @@ fn blink(times: u32) void {
 pub fn main() void {
     systemInit();
     setup();
-    //led.toggle();
 
-    // if (micro.clock.source == .chip) {
-    //     blink(3);
-    // }
-
+    var counter: u32 = 1;
     while (true) {
         if (key_pressed) {
             counter += 1;
@@ -67,44 +47,38 @@ pub fn main() void {
         }
         blink(counter);
         sleep(long);
-        //const delay: u32 = if (clicked % 2 == 0) long else short;
-
-        //led.toggle();
-
-        //const state = key.read();
-        //led.write(state);
-        //@panic("try to panic");
     }
 }
 
-fn sleep(duration: u32) void {
-    var i: u32 = 0;
-    while (i < duration) {
+fn sleep(ms: u32) void {
+    const loop_ops = 5; // estimate number of instruction per loop
+    var ticks: u32 = clock_frequencies.cpu / 1000 * ms / loop_ops;
+    while (ticks > 0) : (ticks -= 1) {
         asm volatile ("nop");
-        i += 1;
     }
 }
+
+//Default clock frequencies after reset
+// prescalers are set in systemInit
+pub const clock_frequencies = .{
+    .cpu = 48_000_000,
+    .ahb = 48_000_000 / 1, // .HPRE
+    .apb1 = 48_000_000 / 4, // .PPRE1
+    .apb2 = 48_000_000 / 2, // .PPRE2
+};
 
 fn setup() void {
     led.init();
     key.init();
 
-    // PA0
-    //micro.interrupts.sei();
+    // PA0 interupt enabling
     regs.SYSCFG.EXTICR1.modify(.{ .EXTI0 = 1 });
     regs.EXTI.RTSR.modify(.{ .TR0 = 1 });
-    regs.EXTI.FTSR.modify(.{ .TR0 = 0 });
     regs.EXTI.IMR.modify(.{ .MR0 = 1 });
     regs.NVIC.ISER0.modify(.{ .SETENA = 0x40 });
 }
 
 fn systemInit() void {
-    // This init does these things:
-    // - Enables the FPU coprocessor
-    // - Sets the external oscillator to achieve a clock frequency of 168MHz
-    // - Sets the correct PLL prescalers for that clock frequency
-    // - Enables the flash data and instruction cache and sets the correct latency for 168MHz
-
     // Enable FPU coprocessor
     // WARN: currently not supported in qemu, comment if testing it there
     regs.FPU_CPACR.CPACR.modify(.{ .CP = 0b11 });
@@ -124,66 +98,15 @@ fn systemInit() void {
     // Wait for HSE ready
     while (regs.RCC.CR.read().HSERDY != 1) {}
 
-    // Use HSE as clock source
-    //regs.RCC.CFGR.modify(.{ .SW0 = 0, .SW1 = 1 });
-
-    // // Wait for PLL selected as clock source
-    // var cfgr = regs.RCC.CFGR.read();
-    // while (cfgr.SWS1 != 0 and cfgr.SWS0 != 1) : (cfgr = regs.RCC.CFGR.read()) {}
-
-    setPLL();
-
-    // Disable HSI
-    regs.RCC.CR.modify(.{ .HSION = 0 });
-}
-
-fn setPLL() void {
-    // Set prescalers for 168 MHz: HPRE = 0, PPRE1 = DIV_4, PPRE2 = DIV_2
+    // Set prescalers for 48 MHz: HPRE = 0, PPRE1 = DIV_4, PPRE2 = DIV_2
     regs.RCC.CFGR.modify(.{ .HPRE = 0, .PPRE1 = 0b101, .PPRE2 = 0b100 });
 
-    // Disable PLL before changing its configuration
-    //regs.RCC.CR.modify(.{ .PLLON = 0 });
-
-    // // Set PLL prescalers and HSE clock source
-    // // TODO: change the svd to expose prescalers as packed numbers instead of single bits
-    // regs.RCC.PLLCFGR.modify(.{
-    //     .PLLSRC = 1,
-    //     // PLLM = 8 = 0b001000
-    //     .PLLM0 = 0,
-    //     .PLLM1 = 0,
-    //     .PLLM2 = 0,
-    //     .PLLM3 = 1,
-    //     .PLLM4 = 0,
-    //     .PLLM5 = 0,
-    //     // PLLN = 336 = 0b101010000
-    //     .PLLN0 = 0,
-    //     .PLLN1 = 0,
-    //     .PLLN2 = 0,
-    //     .PLLN3 = 0,
-    //     .PLLN4 = 1,
-    //     .PLLN5 = 0,
-    //     .PLLN6 = 1,
-    //     .PLLN7 = 0,
-    //     .PLLN8 = 1,
-    //     // PLLP = 2 = 0b10
-    //     .PLLP0 = 1,
-    //     .PLLP1 = 1,
-    //     // PLLQ = 7 = 0b111
-    //     .PLLQ0 = 1,
-    //     .PLLQ1 = 1,
-    //     .PLLQ2 = 1,
-    // });
-
-    // // Enable PLL
-    // regs.RCC.CR.modify(.{ .PLLON = 1 });
-
-    //setPllCfgr(8, 336, 8, 7); //
     //setPllCfgr(25, 384, 4, 8); // 96 Mhz
     setPllCfgr(25, 384, 8, 8); // 48 Mhz
     //setPllCfgr(50, 384, 8, 4); // 24 Mhz
 
-    // Enable flash data and instruction cache and set flash latency to 5 wait states
-    //regs.FLASH.ACR.modify(.{ .DCEN = 1, .ICEN = 1, .LATENCY = 5 });
+    // Disable HSI
+    regs.RCC.CR.modify(.{ .HSION = 0 });
 }
 
 // Fv = source * n / m
