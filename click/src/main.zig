@@ -13,18 +13,12 @@ pub const interrupts = struct {
     }
 
     pub fn EXTI0() void {
-        counter += 1;
-        //blink(counter);
-        //led.toggle();
-        //@panic("unhandled interrupt");
-        // clicked += 1;
-        // if (delay == 200_000) {
-        //     delay = 1_000_000;
-        // } else {
-        //
-        //delay = 200_000;
-        // }
+        //if (regs.EXTI.PR.read().PR0 == 0) {
+        //if (key.read() == .high) {
+        key_pressed = true;
         regs.EXTI.PR.modify(.{ .PR0 = 1 });
+        //}
+        //}
     }
 };
 
@@ -33,6 +27,7 @@ const long = 10_000_000;
 var clicked: u32 = 1;
 var delay: u32 = 200_000;
 var counter: u32 = 1;
+var key_pressed = false;
 
 const led_pin = micro.Pin("PC13");
 const led = micro.Gpio(led_pin, .{
@@ -66,6 +61,10 @@ pub fn main() void {
     // }
 
     while (true) {
+        if (key_pressed) {
+            counter += 1;
+            key_pressed = false;
+        }
         blink(counter);
         sleep(long);
         //const delay: u32 = if (clicked % 2 == 0) long else short;
@@ -94,6 +93,7 @@ fn setup() void {
     //micro.interrupts.sei();
     regs.SYSCFG.EXTICR1.modify(.{ .EXTI0 = 1 });
     regs.EXTI.RTSR.modify(.{ .TR0 = 1 });
+    regs.EXTI.FTSR.modify(.{ .TR0 = 0 });
     regs.EXTI.IMR.modify(.{ .MR0 = 1 });
     regs.NVIC.ISER0.modify(.{ .SETENA = 0x40 });
 }
@@ -142,7 +142,7 @@ fn setPLL() void {
     regs.RCC.CFGR.modify(.{ .HPRE = 0, .PPRE1 = 0b101, .PPRE2 = 0b100 });
 
     // Disable PLL before changing its configuration
-    regs.RCC.CR.modify(.{ .PLLON = 0 });
+    //regs.RCC.CR.modify(.{ .PLLON = 0 });
 
     // // Set PLL prescalers and HSE clock source
     // // TODO: change the svd to expose prescalers as packed numbers instead of single bits
@@ -178,22 +178,12 @@ fn setPLL() void {
     // regs.RCC.CR.modify(.{ .PLLON = 1 });
 
     //setPllCfgr(8, 336, 8, 7); //
-    setPllCfgr(25, 384, 4, 8); // 96 Mhz
+    //setPllCfgr(25, 384, 4, 8); // 96 Mhz
     setPllCfgr(25, 384, 8, 8); // 48 Mhz
-    setPllCfgr(50, 384, 8, 4); // 24 Mhz
-
-    // Wait for PLL ready
-    while (regs.RCC.CR.read().PLLRDY != 1) {}
+    //setPllCfgr(50, 384, 8, 4); // 24 Mhz
 
     // Enable flash data and instruction cache and set flash latency to 5 wait states
-    regs.FLASH.ACR.modify(.{ .DCEN = 1, .ICEN = 1, .LATENCY = 5 });
-
-    // // Select PLL as clock source
-    regs.RCC.CFGR.modify(.{ .SW1 = 1, .SW0 = 0 });
-
-    // // Wait for PLL selected as clock source
-    var cfgr = regs.RCC.CFGR.read();
-    while (cfgr.SWS1 != 1 and cfgr.SWS0 != 0) : (cfgr = regs.RCC.CFGR.read()) {}
+    //regs.FLASH.ACR.modify(.{ .DCEN = 1, .ICEN = 1, .LATENCY = 5 });
 }
 
 // Fv = source * n / m
@@ -253,6 +243,19 @@ fn setPllCfgr(comptime m: u16, comptime n: u16, comptime p: u16, comptime q: u16
     });
     // Enable PLL
     regs.RCC.CR.modify(.{ .PLLON = 1 });
+
+    // Wait for PLL ready
+    while (regs.RCC.CR.read().PLLRDY != 1) {}
+
+    // Enable flash data and instruction cache and set flash latency to 5 wait states
+    regs.FLASH.ACR.modify(.{ .DCEN = 1, .ICEN = 1, .LATENCY = 5 });
+
+    // // Select PLL as clock source
+    regs.RCC.CFGR.modify(.{ .SW1 = 1, .SW0 = 0 });
+
+    // // Wait for PLL selected as clock source
+    var cfgr = regs.RCC.CFGR.read();
+    while (cfgr.SWS1 != 1 and cfgr.SWS0 != 0) : (cfgr = regs.RCC.CFGR.read()) {}
 }
 
 const std = @import("std");
