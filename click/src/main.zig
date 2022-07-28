@@ -8,26 +8,7 @@ pub const interrupts = struct {
     }
 };
 
-const short = 100;
-const long = 1000;
-
 var key_pressed = false;
-
-const led_pin = micro.Pin("PC13");
-const led = micro.Gpio(led_pin, .{
-    .mode = .output,
-    .initial_state = .high,
-});
-
-fn blink(times: u32) void {
-    var i: u32 = 0;
-    while (i < times) : (i += 1) {
-        led.setToLow();
-        sleep(short);
-        led.setToHigh();
-        sleep(short);
-    }
-}
 
 pub fn main() void {
     setup();
@@ -38,32 +19,61 @@ pub fn main() void {
             counter += 1;
             key_pressed = false;
         }
-        blink(counter);
-        sleep(long);
-    }
-}
-
-fn sleep(ms: u32) void {
-    const loop_ops = 5; // estimate number of instruction per loop
-    var ticks: u32 = clock_frequencies.cpu / 1000 * ms / loop_ops;
-    while (ticks > 0) : (ticks -= 1) {
-        asm volatile ("nop");
+        led.blink(counter);
+        delay.long();
     }
 }
 
 fn setup() void {
     initFeatures();
     initClock();
+    initKey();
+    led_pin.init();
+}
 
-    led.init();
+const delay = struct {
+    fn sleep(ms: u32) void {
+        const loop_ops = 5; // estimate number of instruction per loop
+        var ticks: u32 = clock_frequencies.cpu / 1000 * ms / loop_ops;
+        while (ticks > 0) : (ticks -= 1) {
+            asm volatile ("nop");
+        }
+    }
 
+    pub fn long() void {
+        sleep(1000);
+    }
+
+    pub fn short() void {
+        sleep(100);
+    }
+};
+
+const led_pin = micro.Gpio(micro.Pin("PC13"), .{
+    .mode = .output,
+    .initial_state = .high,
+});
+
+const led = struct {
+    pub fn blink(times: u32) void {
+        var i: u32 = 0;
+        while (i < times) : (i += 1) {
+            led_pin.setToLow();
+            delay.short();
+            led_pin.setToHigh();
+            delay.short();
+        }
+    }
+};
+
+fn initKey() void {
     // init key as input
-    const key_pin = micro.Pin("PA0");
-    const key = micro.Gpio(key_pin, .{
-        .mode = .input,
-        .initial_state = .high,
-    });
-    key.init();
+    //micro.Gpio(micro.Pin("PA0"), .{ .mode = .input }).init();
+    // above micro is same as below regs two lines
+
+    // PA0 enable input
+    regs.RCC.AHB1ENR.modify(.{ .GPIOAEN = 1 });
+    regs.GPIOA.MODER.modify(.{ .MODER0 = 0b00 });
 
     // PA0 interupt enabling
     regs.SYSCFG.EXTICR1.modify(.{ .EXTI0 = 1 });
@@ -130,7 +140,7 @@ fn initClock() void {
 //
 // hse source = 25Mhz
 // Fsystem max = 100Mhz
-fn setPllCfgr(comptime m: u16, comptime n: u16, comptime p: u16, comptime q: u16, latency: u3) void {
+fn setPllCfgr(comptime m: u16, comptime n: u16, comptime p: u16, comptime q: u16, comptime latency: u3) void {
     if (!((m >= 2 and m <= 63) and
         (n >= 50 and n <= 432) and
         (p == 2 or p == 4 or p == 6 or p == 8) and
