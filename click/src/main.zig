@@ -19,12 +19,6 @@ const led = micro.Gpio(led_pin, .{
     .initial_state = .high,
 });
 
-const key_pin = micro.Pin("PA0");
-const key = micro.Gpio(key_pin, .{
-    .mode = .input,
-    .initial_state = .high,
-});
-
 fn blink(times: u32) void {
     var i: u32 = 0;
     while (i < times) : (i += 1) {
@@ -36,7 +30,6 @@ fn blink(times: u32) void {
 }
 
 pub fn main() void {
-    systemInit();
     setup();
 
     var counter: u32 = 1;
@@ -58,7 +51,38 @@ fn sleep(ms: u32) void {
     }
 }
 
-//Default clock frequencies after reset
+fn setup() void {
+    initFeatures();
+    initClock();
+
+    led.init();
+
+    // init key as input
+    const key_pin = micro.Pin("PA0");
+    const key = micro.Gpio(key_pin, .{
+        .mode = .input,
+        .initial_state = .high,
+    });
+    key.init();
+
+    // PA0 interupt enabling
+    regs.SYSCFG.EXTICR1.modify(.{ .EXTI0 = 1 });
+    regs.EXTI.RTSR.modify(.{ .TR0 = 1 });
+    regs.EXTI.FTSR.modify(.{ .TR0 = 0 });
+    regs.EXTI.IMR.modify(.{ .MR0 = 1 });
+    regs.NVIC.ISER0.modify(.{ .SETENA = 0x40 });
+}
+
+fn initFeatures() void {
+    // Enable FPU coprocessor
+    // WARN: currently not supported in qemu, comment if testing it there
+    regs.FPU_CPACR.CPACR.modify(.{ .CP = 0b11 });
+
+    // Enable flash data and instruction cache
+    regs.FLASH.ACR.modify(.{ .DCEN = 1, .ICEN = 1 });
+}
+
+// Clock frqencies set in initClock
 // prescalers are set in systemInit
 pub const clock_frequencies = .{
     .cpu = 48_000_000,
@@ -67,22 +91,7 @@ pub const clock_frequencies = .{
     .apb2 = 48_000_000 / 2, // .PPRE2
 };
 
-fn setup() void {
-    led.init();
-    key.init();
-
-    // PA0 interupt enabling
-    regs.SYSCFG.EXTICR1.modify(.{ .EXTI0 = 1 });
-    regs.EXTI.RTSR.modify(.{ .TR0 = 1 });
-    regs.EXTI.IMR.modify(.{ .MR0 = 1 });
-    regs.NVIC.ISER0.modify(.{ .SETENA = 0x40 });
-}
-
-fn systemInit() void {
-    // Enable FPU coprocessor
-    // WARN: currently not supported in qemu, comment if testing it there
-    regs.FPU_CPACR.CPACR.modify(.{ .CP = 0b11 });
-
+fn initClock() void {
     // Enable HSI
     regs.RCC.CR.modify(.{ .HSION = 1 });
 
@@ -101,9 +110,10 @@ fn systemInit() void {
     // Set prescalers for 48 MHz: HPRE = 0, PPRE1 = DIV_4, PPRE2 = DIV_2
     regs.RCC.CFGR.modify(.{ .HPRE = 0, .PPRE1 = 0b101, .PPRE2 = 0b100 });
 
-    //setPllCfgr(25, 384, 4, 8); // 96 Mhz
-    setPllCfgr(25, 384, 8, 8); // 48 Mhz
-    //setPllCfgr(50, 384, 8, 4); // 24 Mhz
+    // few working options
+    //setPllCfgr(25, 384, 4, 8, 3); // 96 Mhz
+    setPllCfgr(25, 384, 8, 8, 1); // 48 Mhz
+    //setPllCfgr(50, 384, 8, 4, 0); // 24 Mhz
 
     // Disable HSI
     regs.RCC.CR.modify(.{ .HSION = 0 });
@@ -120,11 +130,12 @@ fn systemInit() void {
 //
 // hse source = 25Mhz
 // Fsystem max = 100Mhz
-fn setPllCfgr(comptime m: u16, comptime n: u16, comptime p: u16, comptime q: u16) void {
+fn setPllCfgr(comptime m: u16, comptime n: u16, comptime p: u16, comptime q: u16, latency: u3) void {
     if (!((m >= 2 and m <= 63) and
         (n >= 50 and n <= 432) and
         (p == 2 or p == 4 or p == 6 or p == 8) and
-        (q >= 2 and q <= 15)))
+        (q >= 2 and q <= 15) and
+        (latency >= 0 and latency <= 6)))
     {
         @compileError("wrong RCC PLL configuration register values");
     }
@@ -170,8 +181,9 @@ fn setPllCfgr(comptime m: u16, comptime n: u16, comptime p: u16, comptime q: u16
     // Wait for PLL ready
     while (regs.RCC.CR.read().PLLRDY != 1) {}
 
-    // Enable flash data and instruction cache and set flash latency to 5 wait states
-    regs.FLASH.ACR.modify(.{ .DCEN = 1, .ICEN = 1, .LATENCY = 5 });
+    // Set flash latency wait states
+    // depends on clock and voltage range, chapter 3.4 page 45
+    regs.FLASH.ACR.modify(.{ .LATENCY = latency });
 
     // // Select PLL as clock source
     regs.RCC.CFGR.modify(.{ .SW1 = 1, .SW0 = 0 });
