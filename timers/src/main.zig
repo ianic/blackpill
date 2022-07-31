@@ -11,7 +11,17 @@ pub const interrupts = struct {
     }
 
     pub fn EXTI0() void {
+        //tim_overflows += 1;
         regs.EXTI.PR.modify(.{ .PR0 = 1 });
+        //regs.TIM9.SR.modify(.{ .TIF = 0 });
+    }
+
+    pub fn TIM1_BRK_TIM9() void {
+        // Check and clear status register UIF = Update interrupt pending
+        if (regs.TIM9.SR.read().UIF == 1) {
+            regs.TIM9.SR.modify(.{ .UIF = 0 });
+            tim_overflows += 1;
+        }
     }
 };
 
@@ -54,13 +64,39 @@ const Task = struct {
     }
 };
 
+var tim_counter: u16 = 0;
+var tim_overflows: u16 = 0;
+
 pub fn main() void {
     chip.init();
     chip.systick(1);
     chip.led.off();
 
+    // To enable timmer in pooling mode:
+    // Enable Timer 1
+    regs.RCC.APB2ENR.modify(.{ .TIM9EN = 1 });
+    // Set the prescaler
+    regs.TIM9.PSC.modify(48000);
+    // Enable the counter
+    regs.TIM9.CR1.modify(.{ .CEN = 1 });
+    // Set upper limit of the count
+    regs.TIM9.ARR.modify(5000);
+    // Counter used as upcounter/downcounter (not supported for TIM9)
+    //regs.TIM9.CR1.modify(.{ .DIR = 0 });
+
+    // To enable timmer interrupt:
+    // Update interrupt enable
+    regs.TIM9.DIER.modify(.{ .UIE = 1 });
+    // Enable IRQ TIM1_BRK_TIM9_IRQn = 24
+    regs.NVIC.ISER0.modify(.{ .SETENA = 0x1_000_000 });
+
     nosuspend start_tasks();
-    while (true) {}
+
+    while (true) {
+        // Read current counter value
+        tim_counter = regs.TIM9.CNT.read();
+        asm volatile ("nop");
+    }
 }
 
 var tasks: [2]*Task = undefined;
@@ -115,7 +151,7 @@ fn uart_loop(task: *Task) void {
 
     var buf: [128]u8 = undefined;
     while (true) {
-        const s = std.fmt.bufPrint(buf[0..], "ticks: {d}\r\n", .{ticks}) catch buf[0..0];
+        const s = std.fmt.bufPrint(buf[0..], "tim9 counter: {d} overflows: {d} \r\n", .{ tim_counter, tim_overflows }) catch buf[0..0];
         try out.writeAll(s);
         task.sleep(1000);
     }
