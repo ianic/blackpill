@@ -32,12 +32,14 @@ fn adc_init() void {
     regs.ADC_Common.CCR.modify(.{ .ADCPRE = 0b11 }); // prescaler to divide clock by 8
     regs.ADC1.CR2.modify(.{ .SWSTART = 1 }); // start the ADC conversion
 
+    ts.init();
+
     var fr = async uart_loop();
     while (true) {
-        //if (regs.ADC_Common.CSR.read().EOC1 == 1) { // end of conversion
-        adc_data = regs.ADC1.DR.read().DATA; // read ADC data
-        resume uart_frame;
-        //}
+        if (regs.ADC_Common.CSR.read().EOC1 == 1) { // end of conversion
+            adc_data = regs.ADC1.DR.read().DATA; // read ADC data
+            resume uart_frame;
+        }
         chip.delay.sleep(1000);
     }
     await fr;
@@ -66,7 +68,53 @@ fn uart_loop() void {
         suspend {
             uart_frame = @frame();
         }
-        const s = std.fmt.bufPrint(buf[0..], "adc_data: {d}\r\n", .{adc_data}) catch buf[0..0];
+        const s = std.fmt.bufPrint(buf[0..], "data: {d} ts_cal1: {d} ts_cal2: {d} temp f1: {d} f2: {d} diff: {d}\r\n", .{
+            adc_data,
+            ts.cal1(),
+            ts.cal2(),
+            f1(adc_data),
+            f2(adc_data),
+            f1(adc_data) - f2(adc_data),
+        }) catch buf[0..0];
         try out.writeAll(s);
     }
 }
+
+// use temperature sensor calibration values
+fn f1(x: u16) f32 {
+    return ts.slope * @intToFloat(f32, x) + ts.intercept;
+}
+
+// use temperatur sensor characteristics
+fn f2(x: u16) f32 {
+    const v_sense = @intToFloat(f32, x) / 4096 * 3300; // in mV
+    return (v_sense - ts_char.v25) / ts_char.avg_slope + 25;
+}
+
+const ts_char = struct {
+    const avg_slope: f32 = 2.500; // mV/°C
+    const v25: f32 = 760; // mV voltage at 25°C
+};
+
+// temperature sensor calibration values
+const ts = struct {
+    var slope: f32 = 0;
+    var intercept: f32 = 0;
+
+    const self = @This();
+
+    fn init() void {
+        self.slope = @intToFloat(f32, 110 - 30) / @intToFloat(f32, self.cal2() - self.cal1());
+        self.intercept = 110 - self.slope * @intToFloat(f32, self.cal2());
+    }
+
+    fn cal1() u16 {
+        const ptr = @intToPtr(*u16, 0x1FFF7A2C); //TS ADC raw data acquired at temperature of 30 °C, VDDA= 3.3
+        return ptr.*;
+    }
+
+    fn cal2() u16 {
+        const ptr = @intToPtr(*u16, 0x1FFF7A2E); //TS ADC raw data acquired at temperature of 110 °C, VDDA= 3.3 V
+        return ptr.*;
+    }
+};
