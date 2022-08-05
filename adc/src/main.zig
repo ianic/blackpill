@@ -28,7 +28,7 @@ fn adc_init() void {
     regs.ADC1.SQR3.modify(.{ .SQ1 = 18 }); // select ADC input channel
     regs.ADC1.SQR1.modify(.{ .L = 1 }); // sequnce length
 
-    regs.ADC_Common.CCR.modify(.{ .TSVREFE = 1 }); // wake up temperature sensor from power donw
+    regs.ADC_Common.CCR.modify(.{ .TSVREFE = 1 }); // wake up temperature sensor from power down
     regs.ADC_Common.CCR.modify(.{ .ADCPRE = 0b11 }); // prescaler to divide clock by 8
     regs.ADC1.CR2.modify(.{ .SWSTART = 1 }); // start the ADC conversion
 
